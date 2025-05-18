@@ -22,10 +22,11 @@ let players = {};
 let enemies = {};
 const ACTIVE_RADIUS = 10;
 
-// Skapa 5 fiender på slumpmässiga platser
+// Skapa 5 fiender med UUID som nyckel
 for (let i = 1; i <= 5; i++) {
-    enemies[i] = {
-        id: crypto.randomUUID(),
+    const id = crypto.randomUUID();
+    enemies[id] = {
+        id: id,
         name: "Råtta",
         x: 5 + Math.floor(Math.random() * 10),
         y: 5 + Math.floor(Math.random() * 10),
@@ -34,6 +35,17 @@ for (let i = 1; i <= 5; i++) {
         active: false
     };
 }
+
+// const corpseId = crypto.randomUUID();
+// const corpses = {}
+// corpses[corpseId] = {
+//     id: corpseId,
+//     x: target.x,
+//     y: target.y,
+//     loot: [
+//         { id: 'item_meat', name: 'Raw Meat', icon: '🥩', quantity: 1 }
+//     ]
+// };
 
 // ====== GAME LOOP ======
 setInterval(() => {
@@ -186,6 +198,7 @@ io.on('connection', (socket) => {
         if (!player) return;
 
         player.currentTarget = null;
+        player.targetId = null;
 
         const tileInfo = getTileAt(x, y);
         const dx = Math.abs(player.posX - x);
@@ -253,7 +266,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('getPlayerData', () => {
-
+        socket.emit('playerData', players[socket.id]);
     });
 
     socket.on('disconnect', () => {
@@ -263,9 +276,55 @@ io.on('connection', (socket) => {
     });
 });
 
+const ATTACK_COOLDOWN = 1500;
+
 setInterval(() => {
-    socket.emit('playerData', players[socket.id]);
-}, 100)
+    const now = Date.now();
+
+    // === COMBAT LOGIK ===
+    for (const player of Object.values(players)) {
+        if (!player.targetId) continue;
+
+        const target = Object.values(enemies).find(e => e.id === player.targetId);
+        if (!target) {
+            player.targetId = null; // korrekt nyckel
+            continue;
+        }
+
+        const dx = Math.abs(player.posX - target.x);
+        const dy = Math.abs(player.posY - target.y);
+        const inRange = dx <= 1 && dy <= 1;
+
+        if (!inRange) continue;
+
+        if (now - player.lastAttackTime >= ATTACK_COOLDOWN) {
+            player.lastAttackTime = now;
+
+            // Gör attack
+            target.health -= 3;
+
+            io.emit('entityAttacked', {
+                attackerId: player.id,
+                targetId: target.id,
+                newHealth: target.health
+            });
+
+            // Om död
+            if (target.health <= 0) {
+                io.emit('entityDied', {
+                    id: target.id
+                });
+                player.experience += 5;
+                player.targetId = null;
+                delete enemies[target.id];
+            }
+        }
+    }
+
+    // === RESTEN AV FIENDE-LOOPEN ===
+    // (fiender kan också ha liknande system senare)
+
+}, 1000); // varje 100 ms
 
 // ====== START SERVER ======
 server.listen(PORT, () => {

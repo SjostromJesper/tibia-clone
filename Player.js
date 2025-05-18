@@ -1,6 +1,7 @@
 export default class Player {
     constructor(name) {
         this.name = name;
+        this.inventory = new Array(16).fill(null); // 4x4 slots
 
         this.posX = 0;
         this.posY = 0;
@@ -34,5 +35,6 @@ export default class Player {
         };
         this.currentTarget = null;
         this.targetId = null;
+        this.lastAttackTime = 0;
     }
 }
